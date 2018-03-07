@@ -1,0 +1,13 @@
+{
+    "mapillary_class":
+        {
+            "55" : {"cityscapes_class" : "26", "cityscapes_label":"car", "mapillary_label" : "object--vehicle--car"},
+            "56" : {"cityscapes_class" : "29", "cityscapes_label" : "caravan", "mapillary_label" : "object--vehicle--caravan"},
+            "61" : {"cityscapes_class" : "61", "cityscapes_label" : "truck", "mapillary_label" : "object--vehicle--truck"},
+            "54" : {"cityscapes_class" : "28", "cityscapes_label" : "bus", "mapillary_label" : "object--vehicle--bus"},
+            "60" : {"cityscapes_class" : "30", "cityscapes_label" : "trailer", "mapillary_label" : "object--vehicle--trailer"},
+            "57" : {"cityscapes_class" : "32", "cityscapes_label" : "motorcycle", "mapillary_label" : "object--vehicle--motorcyle"},
+            "52" : {"cityscapes_class" : "33", "cityscapes_label" : "bicycle", "mapillary_label" : "object--vehicle-bicycle"},
+            "" : {"cityscapes_class" : "", "cityscapes_label" : "", "mapillary_label" : ""}
+        }
+}

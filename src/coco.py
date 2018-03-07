@@ -37,17 +37,17 @@ import numpy as np
 # I submitted a pull request https://github.com/cocodataset/cocoapi/pull/50
 # If the PR is merged then use the original repo.
 # Note: Edit PythonAPI/Makefile and replace "python" with "python3".
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
-from pycocotools import mask as maskUtils
+#from pycocotools.coco import COCO
+#from pycocotools.cocoeval import COCOeval
+#from pycocotools import mask as maskUtils
 
 import zipfile
 import urllib.request
 import shutil
 
-from config import Config
-import utils
-import model as modellib
+from src.config import Config
+import src.utils as utils
+import src.model as modellib
 
 # Root directory of the project
 ROOT_DIR = os.getcwd()

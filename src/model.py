@@ -2370,7 +2370,8 @@ class MaskRCNN():
         detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, \
             rois, rpn_class, rpn_bbox =\
             self.keras_model.predict([molded_images, image_metas], verbose=0)
-        print (' -----> Mask', mrcnn_mask.shape)
+        if verbose:
+            print (' -----> Mask', mrcnn_mask.shape)
         # return mrcnn_mask
 
         # Process detections
