@@ -2357,18 +2357,22 @@ class MaskRCNN():
             images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
 
         if verbose:
-            log("Processing {} images".format(len(images)))
+            log(" ---> Processing {} images".format(len(images)))
             for image in images:
-                log("image", image)
+                log(" ----> image", image)
         # Mold inputs to format expected by the neural network
         molded_images, image_metas, windows = self.mold_inputs(images)
         if verbose:
-            log("molded_images", molded_images)
-            log("image_metas", image_metas)
+            log(" ----> molded_images", molded_images)
+            log(" ----> image_metas", image_metas)
+
         # Run object detection
         detections, mrcnn_class, mrcnn_bbox, mrcnn_mask, \
             rois, rpn_class, rpn_bbox =\
             self.keras_model.predict([molded_images, image_metas], verbose=0)
+        print (' -----> Mask', mrcnn_mask.shape)
+        # return mrcnn_mask
+
         # Process detections
         results = []
         for i, image in enumerate(images):
