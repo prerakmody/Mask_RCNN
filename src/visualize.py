@@ -11,6 +11,7 @@ import random
 import itertools
 import colorsys
 import numpy as np
+import skimage.io
 from skimage.measure import find_contours
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -65,6 +66,7 @@ def random_colors(N, bright=True):
 def apply_mask(image, mask, color, alpha=0.5):
     """Apply the given mask to the image.
     """
+    print ('[apply_mask] image:', image.shape)
     for c in range(3):
         image[:, :, c] = np.where(mask == 1,
                                   image[:, :, c] *
@@ -75,7 +77,8 @@ def apply_mask(image, mask, color, alpha=0.5):
 
 def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
-                      figsize=(16, 16), ax=None):
+                      figsize=(16, 16), ax=None, show_captions=True, show_boxes=True, show_mask_boundary=True
+                      , save_fig = False):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -85,6 +88,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     figsize: (optional) the size of the image.
     """
     # Number of instances
+    print (image.shape)
+    
     N = boxes.shape[0]
     if not N:
         print("\n*** No instances to display *** \n")
@@ -105,45 +110,63 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.set_title(title)
 
     masked_image = image.astype(np.uint32).copy()
+    print (masked_image.shape)
+    
     for i in range(N):
         color = colors[i]
-
-        # Bounding box
-        if not np.any(boxes[i]):
-            # Skip this instance. Has no bbox. Likely lost in image cropping.
-            continue
-        y1, x1, y2, x2 = boxes[i]
-        p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                              alpha=0.7, linestyle="dashed",
-                              edgecolor=color, facecolor='none')
-        ax.add_patch(p)
+        
+        if show_boxes or show_captions:
+            # Bounding box
+            if not np.any(boxes[i]):
+                # Skip this instance. Has no bbox. Likely lost in image cropping.
+                continue
+            y1, x1, y2, x2 = boxes[i]
+            
+        if show_boxes:
+            p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                                  alpha=0.7, linestyle="dashed",
+                                  edgecolor=color, facecolor='none')
+            ax.add_patch(p)
 
         # Label
-        class_id = class_ids[i]
-        score = scores[i] if scores is not None else None
-        label = class_names[class_id]
-        x = random.randint(x1, (x1 + x2) // 2)
-        caption = "{} {:.3f}".format(label, score) if score else label
-        ax.text(x1, y1 + 8, caption,
-                color='w', size=11, backgroundcolor="none")
+        if show_captions:
+            class_id = class_ids[i]
+            score = scores[i] if scores is not None else None
+            label = class_names[class_id]
+            x = random.randint(x1, (x1 + x2) // 2)
+            caption = "{} {:.3f}".format(label, score) if score else label
+            ax.text(x1, y1 + 8, caption,
+                    color='w', size=11, backgroundcolor="none")
 
         # Mask
         mask = masks[:, :, i]
         masked_image = apply_mask(masked_image, mask, color)
-
-        # Mask Polygon
-        # Pad to ensure proper polygons for masks that touch image edges.
-        padded_mask = np.zeros(
-            (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
-        padded_mask[1:-1, 1:-1] = mask
-        contours = find_contours(padded_mask, 0.5)
-        for verts in contours:
-            # Subtract the padding and flip (y, x) to (x, y)
-            verts = np.fliplr(verts) - 1
-            p = Polygon(verts, facecolor="none", edgecolor=color)
-            ax.add_patch(p)
-    ax.imshow(masked_image.astype(np.uint8))
-    plt.show()
+        
+        if show_mask_boundary:
+            # Mask Polygon
+            # Pad to ensure proper polygons for masks that touch image edges.
+            padded_mask = np.zeros(
+                (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+            padded_mask[1:-1, 1:-1] = mask
+            contours = find_contours(padded_mask, 0.5)
+            for verts in contours:
+                # Subtract the padding and flip (y, x) to (x, y)
+                verts = np.fliplr(verts) - 1
+                p = Polygon(verts, facecolor="none", edgecolor=color)
+                ax.add_patch(p)
+    
+    
+    print ('masked_image : ', masked_image.shape)
+    
+    if save_fig:
+#         frame1 = plt.gca()
+#         frame1.axes.get_xaxis().set_visible(False)
+#         frame1.axes.get_yaxis().set_visible(False)
+#         plt.savefig('./test_img.jpg', bbox_inches = 'tight', pad_inches = 0, dpi = 100)
+        skimage.io.imsave('./test_img.jpg', masked_image.astype('uint8'))
+    else:
+        ax.imshow(masked_image.astype(np.uint8))
+        plt.show()
     
 
 def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10):

@@ -25,7 +25,7 @@
             "12" : {"cityscapes_class" : "0", "cityscapes_label" : "rail-track", "mapillary_label" : "construction-flat-rail-track"},
             "13" : {"cityscapes_class" : "0", "cityscapes_label" : "road", "mapillary_label" : "construction-flat-road"},
             "14" : {"cityscapes_class" : "0", "cityscapes_label" : "road", "mapillary_label" : "construction-flat-service-lane"},
-            "15" : {"cityscapes_class" : "0", "cityscapes_label" : "sidewalk", "mapillary_label" : "construction-flat-sidewalk"},
+            "15" : {"cityscapes_class" : "8", "cityscapes_label" : "sidewalk", "mapillary_label" : "construction-flat-sidewalk"},
             "16" : {"cityscapes_class" : "0", "cityscapes_label" : "bridge", "mapillary_label" : "construction-structure-bridge"},
             "17" : {"cityscapes_class" : "0", "cityscapes_label" : "building", "mapillary_label" : "construction-structure-building"},
             "18" : {"cityscapes_class" : "0", "cityscapes_label" : "tunnel", "mapillary_label" : "construction-structure-tunnel"},

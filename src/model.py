@@ -1070,6 +1070,11 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits,
         classes that are in the dataset of the image, and 0
         for classes that are not in the dataset.
     """
+    
+    log('[play][mrcnn_class_loss_graph] target_class_ids  : {0}'.format(target_class_ids))
+    log('[play][mrcnn_class_loss_graph] pred_class_logits : {0}'.format(pred_class_logits))
+    log('[play][mrcnn_class_loss_graph] active_class_ids  : {0}'.format(active_class_ids))
+    
     target_class_ids = tf.cast(target_class_ids, 'int64')
 
     # Find predictions of classes that are not in the dataset.
@@ -1619,6 +1624,9 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                                              config.BACKBONE_SHAPES,
                                              config.BACKBONE_STRIDES,
                                              config.RPN_ANCHOR_STRIDE)
+    # log('[PLAY][data_generator] len(anchors) : {0}'.format(len(anchors)))
+    #for anchor in anchors:
+    #     log('[PLAY][data_generator] anchor : {0}'.format(anchor))
 
     # Keras requires a generator to run indefinately.
     while True:
@@ -1643,6 +1651,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             # RPN Targets
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors,
                                                     gt_class_ids, gt_boxes, config)
+            # log('[PLAY][data_generator] rpn_match : {0} rpn_bbox : {1}'.format(rpn_match.shape, rpn_bbox.shape))
 
             # Mask R-CNN Targets
             if random_rois:
@@ -1852,6 +1861,8 @@ class MaskRCNN():
                                                       config.BACKBONE_STRIDES,
                                                       config.RPN_ANCHOR_STRIDE)
 
+        playment_verbose = 0
+
         # RPN Model
         rpn = build_rpn_model(config.RPN_ANCHOR_STRIDE,
                               len(config.RPN_ANCHOR_RATIOS), 256)
@@ -1859,14 +1870,33 @@ class MaskRCNN():
         layer_outputs = []  # list of lists
         for p in rpn_feature_maps:
             layer_outputs.append(rpn([p]))
+        if playment_verbose:
+            for each in layer_outputs:
+                pass
+                # log('[Playment] layer_output:{0}'.format(each))
+
         # Concatenate layer outputs
         # Convert from list of lists of level outputs to list of lists
         # of outputs across levels.
         # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
         output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
         outputs = list(zip(*layer_outputs))
+        if playment_verbose:
+            # log('---------------------')
+            for each in outputs:
+                pass
+                # log('outputs {0}'.format(outputs))
+
+
         outputs = [KL.Concatenate(axis=1, name=n)(list(o))
                    for o, n in zip(outputs, output_names)]
+
+        if playment_verbose:
+            # log('---------------------')
+            for each in outputs:
+                pass
+                # log('outputs {0}'.format(outputs))
+
 
         rpn_class_logits, rpn_class, rpn_bbox = outputs
 
@@ -1904,6 +1934,12 @@ class MaskRCNN():
             rois, target_class_ids, target_bbox, target_mask =\
                 DetectionTargetLayer(config, name="proposal_targets")([
                     target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
+            if playment_verbose:
+                log('\n--------------------------')
+                log('[play] rois : {0}'.format(rois.shape))
+                log('[play] target_class_ids : {0}'.format(target_class_ids.shape))
+                log('[play] target_bbox : {0}'.format(target_bbox))
+                log('[play] target_mask : {0}'.format(target_mask))
 
             # Network Heads
             # TODO: verify that this handles zero padded ROIs
@@ -1915,6 +1951,8 @@ class MaskRCNN():
                                               config.IMAGE_SHAPE,
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES)
+            if playment_verbose:
+                log('mrcnn_mask : {0}'.format(mrcnn_mask))
 
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
@@ -1941,6 +1979,7 @@ class MaskRCNN():
                        rpn_rois, output_rois,
                        rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
+            
         else:
             # Network Heads
             # Proposal classifier and BBox regressor heads
@@ -2074,6 +2113,7 @@ class MaskRCNN():
                 continue
             self.keras_model.add_loss(
                 tf.reduce_mean(layer.output, keep_dims=True))
+                # tf.reduce_mean(layer.output, keepdims=True))
 
         # Add L2 Regularization
         # Skip gamma and beta weights of batch normalization layers.
@@ -2301,12 +2341,14 @@ class MaskRCNN():
         # Detections array is padded with zeros. Find the first class_id == 0.
         zero_ix = np.where(detections[:, 4] == 0)[0]
         N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
+        log('[PLAY][unmold_detections] N : {0}'.format(N))
 
         # Extract boxes, class_ids, scores, and class-specific masks
         boxes = detections[:N, :4]
         class_ids = detections[:N, 4].astype(np.int32)
         scores = detections[:N, 5]
         masks = mrcnn_mask[np.arange(N), :, :, class_ids]
+        log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
 
         # Compute scale and shift to translate coordinates to image domain.
         h_scale = image_shape[0] / (window[2] - window[0])
@@ -2329,6 +2371,8 @@ class MaskRCNN():
             scores = np.delete(scores, exclude_ix, axis=0)
             masks = np.delete(masks, exclude_ix, axis=0)
             N = class_ids.shape[0]
+        log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
+
 
         # Resize masks to original image size and set boundary threshold.
         full_masks = []

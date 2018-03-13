@@ -17,15 +17,24 @@ import PIL
 import scipy.misc
 import skimage.color
 import skimage.io
-#import urllib.request
 import urllib
 import shutil
 
-# print (dir(scipy.misc))
 
 # URL from which to download the latest COCO trained weights
 COCO_MODEL_URL = "https://github.com/matterport/Mask_RCNN/releases/download/v2.0/mask_rcnn_coco.h5"
 
+def log(text, array=None):
+    """Prints a text message. And, optionally, if a Numpy array is provided it
+    prints it's shape, min, and max values.
+    """
+    if array is not None:
+        text = text.ljust(25)
+        text += ("shape: {:20}  min: {:10.5f}  max: {:10.5f}".format(
+            str(array.shape),
+            array.min() if array.size else "",
+            array.max() if array.size else ""))
+    print(text)
 
 ############################################################
 #  Bounding Boxes
@@ -37,6 +46,7 @@ def extract_bboxes(mask):
 
     Returns: bbox array [num_instances, (y1, x1, y2, x2)].
     """
+    # log('[PLAY][extract_bboxes] mask : {0}: '.format(mask.shape))
     boxes = np.zeros([mask.shape[-1], 4], dtype=np.int32)
     for i in range(mask.shape[-1]):
         m = mask[:, :, i]
