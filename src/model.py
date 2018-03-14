@@ -1071,9 +1071,11 @@ def mrcnn_class_loss_graph(target_class_ids, pred_class_logits,
         for classes that are not in the dataset.
     """
     
-    log('[play][mrcnn_class_loss_graph] target_class_ids  : {0}'.format(target_class_ids))
-    log('[play][mrcnn_class_loss_graph] pred_class_logits : {0}'.format(pred_class_logits))
-    log('[play][mrcnn_class_loss_graph] active_class_ids  : {0}'.format(active_class_ids))
+    verbose = 0
+    if verbose:
+        log('[play][mrcnn_class_loss_graph] target_class_ids  : {0}'.format(target_class_ids))
+        log('[play][mrcnn_class_loss_graph] pred_class_logits : {0}'.format(pred_class_logits))
+        log('[play][mrcnn_class_loss_graph] active_class_ids  : {0}'.format(active_class_ids))
     
     target_class_ids = tf.cast(target_class_ids, 'int64')
 
@@ -1761,7 +1763,7 @@ class MaskRCNN():
     The actual Keras model is in the keras_model property.
     """
 
-    def __init__(self, mode, config, model_dir):
+    def __init__(self, mode, config, model_dir, verbose=False):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
@@ -1772,9 +1774,9 @@ class MaskRCNN():
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
-        self.keras_model = self.build(mode=mode, config=config)
+        self.keras_model = self.build(mode=mode, config=config, verbose=False)
 
-    def build(self, mode, config):
+    def build(self, mode, config, verbose):
         """Build Mask R-CNN architecture.
             input_shape: The shape of the input image.
             mode: Either "training" or "inference". The inputs and
@@ -1861,7 +1863,6 @@ class MaskRCNN():
                                                       config.BACKBONE_STRIDES,
                                                       config.RPN_ANCHOR_STRIDE)
 
-        playment_verbose = 0
 
         # RPN Model
         rpn = build_rpn_model(config.RPN_ANCHOR_STRIDE,
@@ -1870,7 +1871,7 @@ class MaskRCNN():
         layer_outputs = []  # list of lists
         for p in rpn_feature_maps:
             layer_outputs.append(rpn([p]))
-        if playment_verbose:
+        if verbose:
             for each in layer_outputs:
                 pass
                 # log('[Playment] layer_output:{0}'.format(each))
@@ -1881,7 +1882,7 @@ class MaskRCNN():
         # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
         output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
         outputs = list(zip(*layer_outputs))
-        if playment_verbose:
+        if verbose:
             # log('---------------------')
             for each in outputs:
                 pass
@@ -1891,7 +1892,7 @@ class MaskRCNN():
         outputs = [KL.Concatenate(axis=1, name=n)(list(o))
                    for o, n in zip(outputs, output_names)]
 
-        if playment_verbose:
+        if verbose:
             # log('---------------------')
             for each in outputs:
                 pass
@@ -1934,7 +1935,7 @@ class MaskRCNN():
             rois, target_class_ids, target_bbox, target_mask =\
                 DetectionTargetLayer(config, name="proposal_targets")([
                     target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
-            if playment_verbose:
+            if verbose:
                 log('\n--------------------------')
                 log('[play] rois : {0}'.format(rois.shape))
                 log('[play] target_class_ids : {0}'.format(target_class_ids.shape))
@@ -1951,7 +1952,7 @@ class MaskRCNN():
                                               config.IMAGE_SHAPE,
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES)
-            if playment_verbose:
+            if verbose:
                 log('mrcnn_mask : {0}'.format(mrcnn_mask))
 
             # TODO: clean up (use tf.identify if necessary)
