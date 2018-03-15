@@ -2260,6 +2260,12 @@ class MaskRCNN():
         log("Checkpoint Path: {}".format(self.checkpoint_path))
         self.set_trainable(layers)
         self.compile(learning_rate, self.config.LEARNING_MOMENTUM)
+        
+        trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.trainable_weights)]))
+        non_trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.non_trainable_weights)]))
+        print('Total params: {:,}'.format(trainable_count + non_trainable_count))
+        print('Trainable params: {:,}'.format(trainable_count))
+        print('Non-trainable params: {:,}'.format(non_trainable_count))
 
         # Work-around for Windows: Keras fails on Windows when using
         # multiprocessing workers. See discussion here:
@@ -2342,14 +2348,14 @@ class MaskRCNN():
         # Detections array is padded with zeros. Find the first class_id == 0.
         zero_ix = np.where(detections[:, 4] == 0)[0]
         N = zero_ix[0] if zero_ix.shape[0] > 0 else detections.shape[0]
-        log('[PLAY][unmold_detections] N : {0}'.format(N))
+        # log('[PLAY][unmold_detections] N : {0}'.format(N))
 
         # Extract boxes, class_ids, scores, and class-specific masks
         boxes = detections[:N, :4]
         class_ids = detections[:N, 4].astype(np.int32)
         scores = detections[:N, 5]
         masks = mrcnn_mask[np.arange(N), :, :, class_ids]
-        log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
+        # log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
 
         # Compute scale and shift to translate coordinates to image domain.
         h_scale = image_shape[0] / (window[2] - window[0])
@@ -2372,7 +2378,7 @@ class MaskRCNN():
             scores = np.delete(scores, exclude_ix, axis=0)
             masks = np.delete(masks, exclude_ix, axis=0)
             N = class_ids.shape[0]
-        log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
+        # log('[PLAY][unmold_detections] masks : {0}'.format(masks.shape))
 
 
         # Resize masks to original image size and set boundary threshold.
@@ -2398,6 +2404,10 @@ class MaskRCNN():
         masks: [H, W, N] instance binary masks
         """
         assert self.mode == "inference", "Create model in inference mode."
+        
+        if verbose:
+            log('len(images) : {0} || self.config.BATCH_SIZE : {1}'.format(len(images),self.config.BATCH_SIZE))
+            
         assert len(
             images) == self.config.BATCH_SIZE, "len(images) must be equal to BATCH_SIZE"
 

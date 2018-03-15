@@ -66,7 +66,6 @@ def random_colors(N, bright=True):
 def apply_mask(image, mask, color, alpha=0.5):
     """Apply the given mask to the image.
     """
-    print ('[apply_mask] image:', image.shape)
     for c in range(3):
         image[:, :, c] = np.where(mask == 1,
                                   image[:, :, c] *
@@ -77,7 +76,7 @@ def apply_mask(image, mask, color, alpha=0.5):
 
 def display_instances(image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
-                      figsize=(16, 16), ax=None, show_captions=True, show_boxes=True, show_mask_boundary=True
+                      figsize=(20, 20), ax=None, show_captions=True, show_boxes=True, show_mask_boundary=True
                       , save_fig = False):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
@@ -88,7 +87,6 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     figsize: (optional) the size of the image.
     """
     # Number of instances
-    print (image.shape)
     
     N = boxes.shape[0]
     if not N:
@@ -110,7 +108,6 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.set_title(title)
 
     masked_image = image.astype(np.uint32).copy()
-    print (masked_image.shape)
     
     for i in range(N):
         color = colors[i]
@@ -135,6 +132,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
             label = class_names[class_id]
             x = random.randint(x1, (x1 + x2) // 2)
             caption = "{} {:.3f}".format(label, score) if score else label
+            caption = label
             ax.text(x1, y1 + 8, caption,
                     color='w', size=11, backgroundcolor="none")
 
@@ -156,13 +154,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
                 ax.add_patch(p)
     
     
-    print ('masked_image : ', masked_image.shape)
     
     if save_fig:
-#         frame1 = plt.gca()
-#         frame1.axes.get_xaxis().set_visible(False)
-#         frame1.axes.get_yaxis().set_visible(False)
-#         plt.savefig('./test_img.jpg', bbox_inches = 'tight', pad_inches = 0, dpi = 100)
         skimage.io.imsave('./test_img.jpg', masked_image.astype('uint8'))
     else:
         ax.imshow(masked_image.astype(np.uint8))

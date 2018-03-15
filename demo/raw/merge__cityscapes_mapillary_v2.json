@@ -12,6 +12,7 @@
             "60" : {"playment_class" : "5", "cityscapes_class" : "30", "cityscapes_label" : "trailer", "mapillary_label" : "object--vehicle--trailer", "instance" : "True"},
             "61" : {"playment_class" : "3", "cityscapes_class" : "27", "cityscapes_label" : "truck"     , "mapillary_label" : "object--vehicle--truck", "instance" : "True"},
             "62" : {"playment_class" : "0", "cityscapes_class" : "0",  "cityscapes_label" : "unlabelled", "mapillary_label" : "object--vehicle--wheeled-slow"},
+            "63" : {"playment_class" : "0", "cityscapes_class" : "0",  "cityscapes_label" : "unlabelled", "mapillary_label" : "void--car-mount"},
             "2"  : {"playment_class" : "9", "cityscapes_class" : "8", "cityscapes_label" : "sidewalk", "mapillary_label" : "construction-barrier-curb"},
             "3"  : {"playment_class" : "0" , "cityscapes_class" : "0", "cityscapes_label" : "fence", "mapillary_label" : "construction-barrier-fence"},
             "4"  : {"playment_class" : "0" , "cityscapes_class" : "0", "cityscapes_label" : "guard-rail", "mapillary_label" : "construction-barrier-guard-rail"},

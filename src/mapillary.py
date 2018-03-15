@@ -32,8 +32,8 @@ class MapillaryConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 30
     ROI_POSITIVE_RATIO = 0.9
     
-    STEPS_PER_EPOCH = 10
-    # STEPS_PER_EPOCH = 2250
+    # STEPS_PER_EPOCH = 10
+    STEPS_PER_EPOCH = 2250
     VALIDATION_STEPS = 2
 
 
@@ -58,6 +58,10 @@ class MapillaryDataset(utils.Dataset):
         # Add classes
         self.add_classes()
         
+        
+        self.url_train = ''
+        self.url_train_images = ''
+        
         # Add Raw Images (.jpg)
         if data_type == 'train': 
             self.url_train = os.path.join(url_dataset, 'mapillary-vistas-dataset_public_v1.0/training')
@@ -65,17 +69,24 @@ class MapillaryDataset(utils.Dataset):
         elif data_type == 'val':
             self.url_train = os.path.join(url_dataset, 'mapillary-vistas-dataset_public_v1.0/validation')
             self.url_train_images = os.path.join(self.url_train, 'images')
-            
-        images_list = os.listdir(self.url_train_images)
-        print ('Mode : {0} has {1} images'.format(data_type, len(images_list)))
-        for i, image in enumerate(images_list):
-            url_train_tmp = os.path.join(self.url_train_images, image)
-            self.add_image(source=self.dataset,
-                           image_id=i,
-                           path=url_train_tmp)
+        elif data_type == 'test':
+            self.url_train = os.path.join(url_dataset, 'mapillary-vistas-dataset_public_v1.0_test/testing')
+            self.url_train_images = os.path.join(self.url_train, 'images')
         
-        # Prepare
-        self.prepare()
+        if self.url_train_images != '':
+            images_list = os.listdir(self.url_train_images)
+            print ('Mode : {0} has {1} images'.format(data_type, len(images_list)))
+            for i, image in enumerate(images_list):
+                url_train_tmp = os.path.join(self.url_train_images, image)
+                self.add_image(source=self.dataset,
+                               image_id=i,
+                               path=url_train_tmp)
+        
+            # Prepare
+            self.prepare()
+        else:
+            print ('Problemo!')
+        
         
     
     def add_classes(self):
