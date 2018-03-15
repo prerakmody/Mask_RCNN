@@ -461,19 +461,23 @@ def resize_mask(mask, scale, padding):
     return mask
 
 
-def minimize_mask(bbox, mask, mini_shape):
+def minimize_mask(bbox, mask, mini_shape, class_ids):
     """Resize masks to a smaller version to cut memory load.
     Mini-masks can then resized back to image scale using expand_masks()
 
     See inspect_data.ipynb notebook for more details.
     """
+    class_ids_done = []
     mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=bool)
     for i in range(mask.shape[-1]):
         m = mask[:, :, i]
         y1, x1, y2, x2 = bbox[i][:4]
         m = m[y1:y2, x1:x2]
+        class_ids_done.append(class_ids[i])
         if m.size == 0:
-            raise Exception("Invalid bounding box with area of zero")
+            class_id = class_ids[i]
+            raise Exception("\nInvalid bounding box with area of zero for class : {0} at mask_id : {1}. \n Classes done : {2} \n Single Mask Shape : {3} BBox:{4}\n".format(class_id, i, class_ids_done, m.shape, bbox[i][:4]))
+            # raise Exception("Invalid bounding box with area of zero")
         m = scipy.misc.imresize(m.astype(float), mini_shape, interp='bilinear')
         mini_mask[:, :, i] = np.where(m >= 128, 1, 0)
     return mini_mask

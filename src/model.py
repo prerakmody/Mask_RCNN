@@ -1227,7 +1227,7 @@ def load_image_gt(dataset, config, image_id, augment=False,
 
     # Resize masks to smaller size to reduce memory usage
     if use_mini_mask:
-        mask = utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
+        mask = utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE, class_ids)
 
     # Image meta data
     image_meta = compose_image_meta(image_id, shape, window, active_class_ids)
@@ -2170,8 +2170,8 @@ class MaskRCNN():
                 layer.trainable = trainable
             # Print trainble layer names
             if trainable and verbose > 0:
-                log("{}{:20}   ({})".format(" " * indent, layer.name,
-                                            layer.__class__.__name__))
+                pass
+                # log("{}{:20}   ({})".format(" " * indent, layer.name, layer.__class__.__name__))
 
     def set_log_dir(self, model_path=None):
         """Sets the model log directory and epoch counter.
@@ -2263,9 +2263,9 @@ class MaskRCNN():
         
         trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.trainable_weights)]))
         non_trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.non_trainable_weights)]))
-        print('Total params: {:,}'.format(trainable_count + non_trainable_count))
+        print('\nTotal params: {:,}'.format(trainable_count + non_trainable_count))
         print('Trainable params: {:,}'.format(trainable_count))
-        print('Non-trainable params: {:,}'.format(non_trainable_count))
+        print('Non-trainable params: {:,}\n'.format(non_trainable_count))
 
         # Work-around for Windows: Keras fails on Windows when using
         # multiprocessing workers. See discussion here:
@@ -2274,7 +2274,8 @@ class MaskRCNN():
             workers = 0
         else:
             workers = max(self.config.BATCH_SIZE // 2, 2)
-
+        
+        print ('Compiled and using {0} workers! \n'.format(workers))
         self.keras_model.fit_generator(
             train_generator,
             initial_epoch=self.epoch,

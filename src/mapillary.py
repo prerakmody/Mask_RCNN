@@ -2,6 +2,7 @@ import os
 import cv2
 import json
 import pprint
+import colorsys
 import skimage.io
 import numpy as np
 import skimage.transform
@@ -32,14 +33,14 @@ class MapillaryConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 30
     ROI_POSITIVE_RATIO = 0.9
     
-    # STEPS_PER_EPOCH = 10
+    # STEPS_PER_EPOCH = 1
     STEPS_PER_EPOCH = 2250
     VALIDATION_STEPS = 2
 
 
 class MapillaryDataset(utils.Dataset):
     
-    def __init__(self, url_dataset, mapper, config, data_type):
+    def __init__(self, url_dataset, mapper, config, data_type, image_ids = []):
         
         # Base Code (copied) 
         self._image_ids = []
@@ -73,14 +74,25 @@ class MapillaryDataset(utils.Dataset):
             self.url_train = os.path.join(url_dataset, 'mapillary-vistas-dataset_public_v1.0_test/testing')
             self.url_train_images = os.path.join(self.url_train, 'images')
         
+        iter_test = -1
+        if len(image_ids): # for testing purposes
+            iter_test = 0
+        
         if self.url_train_images != '':
             images_list = os.listdir(self.url_train_images)
             print ('Mode : {0} has {1} images'.format(data_type, len(images_list)))
             for i, image in enumerate(images_list):
                 url_train_tmp = os.path.join(self.url_train_images, image)
-                self.add_image(source=self.dataset,
-                               image_id=i,
-                               path=url_train_tmp)
+                if len(image_ids): # for testing purposes
+                    if i in image_ids:
+                        self.add_image(source=self.dataset,
+                                   image_id=iter_test,
+                                   path=url_train_tmp)
+                        iter_test += 1
+                else:
+                    self.add_image(source=self.dataset,
+                                   image_id=i,
+                                   path=url_train_tmp)
         
             # Prepare
             self.prepare()
@@ -121,13 +133,17 @@ class MapillaryDataset(utils.Dataset):
         masks = []
         class_ids_orig = []
         class_ids = []
-            
+        
+        inst_id_global = 0
         if len(masks_binary): 
             for class_id in masks_binary:
                 for instance_id in masks_binary[class_id]:
                     mask_class_instance = np.array(masks_binary[class_id][instance_id])
-                    masks.append(self.helper_resize_image_to_MAX_DIM(mask_class_instance))
-                    class_ids.append(self.map_source_class_id(self.dataset + '.' + class_id))
+                    mask_class_instance = self.helper_resize_image_to_MAX_DIM(mask_class_instance)
+                    if len(np.unique(mask_class_instance)) > 1:
+                        masks.append(mask_class_instance)
+                        class_ids.append(self.map_source_class_id(self.dataset + '.' + class_id))
+                    inst_id_global += 1
 
             masks = np.array(masks).transpose(1, 2, 0)
             class_ids = np.array(class_ids).astype(np.uint32)
@@ -179,6 +195,7 @@ class MapillaryDataset(utils.Dataset):
                     class_ids_mapping_16_8.pop(class_id)
             
             if test: 
+                # pprint.pprint(class_instance_ids_count)
                 pass
                 
             # 2. Using class_ids_mapping_16_8, create multiple binary masks
@@ -192,16 +209,16 @@ class MapillaryDataset(utils.Dataset):
                     tmp = np.zeros((img_int16.shape), dtype=np.uint8)
                     tmp[img_int16 != int(class_id_int16)] = 0
                     tmp[img_int16 == int(class_id_int16)] = 1
-                    
-                    if test:
-                        pass
-
-                    class_id_playment = self.mapper_json['mapillary_class'][str(class_id_int8)]['playment_class']
-                    masks_count += 1
-                    if str(class_id_playment) not in masks_binary_res:
-                        masks_binary_res[class_id_playment] = {}   
-                    tmp_name = '{0}'.format(len(masks_binary_res[class_id_playment]))
-                    masks_binary_res[class_id_playment][tmp_name] = tmp
+                    unique_elems = np.unique(tmp)
+                    if len(unique_elems) > 1: # this might be a redundant check
+                        if test:
+                            pass
+                        class_id_playment = self.mapper_json['mapillary_class'][str(class_id_int8)]['playment_class']
+                        masks_count += 1
+                        if str(class_id_playment) not in masks_binary_res:
+                            masks_binary_res[class_id_playment] = {}   
+                        tmp_name = '{0}'.format(len(masks_binary_res[class_id_playment]))
+                        masks_binary_res[class_id_playment][tmp_name] = tmp
             
             if verbose:
                 print (' - Total Masks : ', masks_count)
@@ -212,7 +229,7 @@ class MapillaryDataset(utils.Dataset):
             return []
     
     def helper_check_masks(self, image_id, masks_binary, verbose, test):
-        f, axarr = plt.subplots(1, figsize=(12,12))
+        f, axarr = plt.subplots(1, figsize=(15,15))
         frame1 = plt.gca()
         
         label_name  = self.image_info[image_id]['path'].split('/')[-1].split('.jpg')[0] + '.png'
@@ -222,7 +239,13 @@ class MapillaryDataset(utils.Dataset):
         masks_binary_printed_count = 0
         masks_binary_count = len([1 for class_id in masks_binary for instance_id in masks_binary[class_id]])
         
-        for class_id_city in sorted(masks_binary):
+        # Colors
+        N = len(masks_binary.keys())
+        brightness = 0.7
+        hsv = [(i / N, 1, brightness) for i in range(N)]
+        colors = list(map(lambda c: colorsys.hsv_to_rgb(*c), hsv))
+        
+        for i, class_id_city in enumerate(sorted(masks_binary)):
             for instance_id in masks_binary[class_id_city]:
                 tmp = np.array(masks_binary[class_id_city][instance_id])
                 try:
@@ -245,11 +268,33 @@ class MapillaryDataset(utils.Dataset):
                             # if int(class_id_city) in [8]:
                             masks_binary_printed_count += 1
                             poly = geometry.Polygon(contour_pts)
-                            patch = PolygonPatch(poly, facecolor = [0,1,0], edgecolor = [0,0,0], alpha = 0.9)
+                            patch = PolygonPatch(poly, facecolor = colors[i], edgecolor = colors[i], alpha = 0.9)
+                            # patch = PolygonPatch(poly, facecolor = [0,1,0], edgecolor = [0,0,0], alpha = 0.9)
                             axarr.add_patch(patch)
                         else:
-                            if verbose:
-                                print (' --> Class ID : {0} || Instance ID : {1}'.format(class_id_city, instance_id))
+                            if test:
+                                print (' --> Unable to draw : Class ID : {0} || Instance ID : {1}'.format(class_id_city, instance_id))
+                                print (contour_pts)
+                    
+                    # Step3 : Draw BBs
+                    horizontal_indicies = np.where(np.any(tmp, axis=0))[0]
+                    vertical_indicies   = np.where(np.any(tmp, axis=1))[0]
+                    if horizontal_indicies.shape[0]:
+                        x1, x2 = horizontal_indicies[[0, -1]]
+                        y1, y2 = vertical_indicies[[0, -1]]
+                        x2 += 1
+                        y2 += 1
+                    else:
+                        x1, x2, y1, y2 = 0, 0, 0, 0
+                    
+                    if int(class_id_city) != 21: #sky
+                        poly = geometry.box(x1, y1, x2, y2) #(minx, miny, maxx, maxy)
+                        patch = PolygonPatch(poly, facecolor = colors[i], edgecolor = colors[i], alpha = 0.3)
+                        axarr.add_patch(patch)
+                    caption = '{0}_{1}'.format(class_id_city, instance_id)
+                    axarr.text(x1, y1 + 8, caption, color='w', size=11, backgroundcolor="none")
+                    
+                    
 
                 except Exception as e:
                     print (' --> Error:', e)
