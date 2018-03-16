@@ -14,6 +14,7 @@ import sys
 import glob
 import random
 import math
+import h5py
 import time
 import datetime
 import itertools
@@ -1632,10 +1633,11 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
     #     log('[PLAY][data_generator] anchor : {0}'.format(anchor))
 
     # Keras requires a generator to run indefinately.
-    verbose = 1
+    verbose = 0
+    t0 = time.time()
     while True:
         try:
-            t0 = time.time()
+            t_idx = time.time()
             # Increment index to pick next image. Shuffle if at the start of an epoch.
             image_index = (image_index + 1) % len(image_ids)
             if shuffle and image_index == 0:
@@ -1648,7 +1650,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                               use_mini_mask=config.USE_MINI_MASK)
             
             if verbose:
-                print ('Time taken for BB and Mask : {0}'.format(round(time.time() - t0,2)))
+                log('Time taken for BB and Mask [Batch Iten Index : {0}/{1}] : {2}'.format(b, batch_size, round(time.time() - t_idx,2)))
             # Skip images that have no instances. This can happen in cases
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
@@ -1659,7 +1661,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors,
                                                     gt_class_ids, gt_boxes, config)
             if verbose:
-                print ('Time taken for RPN targets : {0}'.format(round(time.time() - t0,2)))
+                log('Time taken for RPN targets [Batch Iten Index : {0}] : {1}'.format(b, round(time.time() - t_idx,2)))
             # log('[PLAY][data_generator] rpn_match : {0} rpn_bbox : {1}'.format(rpn_match.shape, rpn_bbox.shape))
 
             # Mask R-CNN Targets
@@ -1671,7 +1673,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                         build_detection_targets(
                             rpn_rois, gt_class_ids, gt_boxes, gt_masks, config)
             if verbose:
-                print ('Time taken for Random Rois  : {0}'.format(round(time.time() - t0,2)))
+                log('Time taken for Random Rois [Batch Iten Index : {0}] : {1}'.format(b, round(time.time() - t_idx,2)))
 
             # Init batch arrays
             if b == 0:
@@ -1729,8 +1731,11 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                     batch_mrcnn_class_ids[b] = mrcnn_class_ids
                     batch_mrcnn_bbox[b] = mrcnn_bbox
                     batch_mrcnn_mask[b] = mrcnn_mask
-            b += 1
+            if verbose:
+                log('Time taken for Add to Batch [Batch Iten Index : {0}] : {1}'.format(b, round(time.time() - t_idx,2)))
 
+            b += 1
+            
             # Batch full?
             if b >= batch_size:
                 inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
@@ -1747,12 +1752,15 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                         outputs.extend(
                             [batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
                 
-                time_delta = round(time.time() - t0, 2)
-                print ('Time Taken for one batch : ', time_delta)
                 yield inputs, outputs
 
                 # start a new batch
                 b = 0
+                time_delta = round(time.time() - t0, 2)
+                log(' ----> Time Taken for one batch {0} || Final Index : {1}'.format(time_delta, image_index))
+                
+                t0 = time.time()
+                
         except (GeneratorExit, KeyboardInterrupt):
             raise
         except:
@@ -1762,6 +1770,31 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             error_count += 1
             if error_count > 5:
                 raise
+
+def data_generator_play(url_dataset):
+    error_count = 0
+    while True:
+        for each in os.listdir(url_dataset):
+            try:
+                url_tmp = os.path.join(url_dataset, each)
+                ip, op = [], []
+                # print (' --> ', url_tmp)
+                with h5py.File(url_tmp, "r") as hf:
+                    ip, op = [], []
+                    for name in hf:
+                        if 'input' in name:
+                            ip.append(np.array(hf.get(name)))
+                        elif 'output' in name:
+                            op.append(np.array(hf.get(name)))
+                yield ip, op[0]
+            except (GeneratorExit, KeyboardInterrupt):
+                raise
+            except:
+                # Log it and skip the image
+                logging.exception("Error processing .h5 file {}".format(url_tmp))
+                error_count += 1
+                if error_count > 5:
+                    raise
 
 
 ############################################################
@@ -2124,8 +2157,8 @@ class MaskRCNN():
             if layer.output in self.keras_model.losses:
                 continue
             self.keras_model.add_loss(
-                tf.reduce_mean(layer.output, keep_dims=True))
-                # tf.reduce_mean(layer.output, keepdims=True))
+                # tf.reduce_mean(layer.output, keep_dims=True))
+                tf.reduce_mean(layer.output, keepdims=True))
 
         # Add L2 Regularization
         # Skip gamma and beta weights of batch normalization layers.
@@ -2145,7 +2178,7 @@ class MaskRCNN():
             layer = self.keras_model.get_layer(name)
             self.keras_model.metrics_names.append(name)
             self.keras_model.metrics_tensors.append(tf.reduce_mean(
-                layer.output, keep_dims=True))
+                layer.output, keepdims=True))
 
     def set_trainable(self, layer_regex, keras_model=None, indent=0, verbose=1):
         """Sets model layers as trainable if their names match
@@ -2169,7 +2202,7 @@ class MaskRCNN():
                 self.set_trainable(
                     layer_regex, keras_model=layer, indent=indent + 4)
                 continue
-
+    
             if not layer.weights:
                 continue
             # Is it trainable?
@@ -2202,6 +2235,7 @@ class MaskRCNN():
             # A sample model path might look like:
             # /path/to/logs/coco20171029T2315/mask_rcnn_coco_0001.h5
             regex = r".*/\w+(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/mask\_rcnn\_\w+(\d{4})\.h5"
+            # regex = r".*/\w+(\d{4})_(\d{2})_(\d{2})_T_(\d{2})_(\d{2})/mask\_rcnn\_\w+(\d{4})\.h5"
             m = re.match(regex, model_path)
             if m:
                 now = datetime.datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
@@ -2250,14 +2284,21 @@ class MaskRCNN():
         }
         if layers in layer_regex.keys():
             layers = layer_regex[layers]
+        
+        if type(train_dataset) != str:
+            # Data generators
+            train_generator = data_generator(train_dataset, self.config, shuffle=True,
+                                             batch_size=self.config.BATCH_SIZE)
+            val_generator = data_generator(val_dataset, self.config, shuffle=True,
+                                           batch_size=self.config.BATCH_SIZE,
+                                           augment=False)
+        else:
+            train_generator = data_generator_play(train_dataset) # this is a url
+            val_generator   = data_generator_play(val_dataset)   # this is a url
 
-        # Data generators
-        train_generator = data_generator(train_dataset, self.config, shuffle=True,
-                                         batch_size=self.config.BATCH_SIZE)
-        val_generator = data_generator(val_dataset, self.config, shuffle=True,
-                                       batch_size=self.config.BATCH_SIZE,
-                                       augment=False)
-
+        # log('train_generator : {}'.format(train_generator))
+        # log('val_generator : {}'.format(val_generator))
+            
         # Callbacks
         callbacks = [
             keras.callbacks.TensorBoard(log_dir=self.log_dir,
@@ -2285,8 +2326,11 @@ class MaskRCNN():
             workers = 0
         else:
             workers = max(self.config.BATCH_SIZE // 2, 2)
+        workers = 0
         
         print ('Compiled and using {0} workers! \n'.format(workers))
+        
+        #https://github.com/tensorflow/tensorflow/blob/r1.6/tensorflow/python/keras/_impl/keras/engine/training.py
         self.keras_model.fit_generator(
             train_generator,
             initial_epoch=self.epoch,
@@ -2297,7 +2341,7 @@ class MaskRCNN():
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=workers,
-            use_multiprocessing=True,
+            use_multiprocessing=False,
         )
         self.epoch = max(self.epoch, epochs)
 
