@@ -14,6 +14,7 @@ import sys
 import glob
 import random
 import math
+import time
 import datetime
 import itertools
 import json
@@ -1631,8 +1632,10 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
     #     log('[PLAY][data_generator] anchor : {0}'.format(anchor))
 
     # Keras requires a generator to run indefinately.
+    verbose = 1
     while True:
         try:
+            t0 = time.time()
             # Increment index to pick next image. Shuffle if at the start of an epoch.
             image_index = (image_index + 1) % len(image_ids)
             if shuffle and image_index == 0:
@@ -1643,7 +1646,9 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             image, image_meta, gt_class_ids, gt_boxes, gt_masks = \
                 load_image_gt(dataset, config, image_id, augment=augment,
                               use_mini_mask=config.USE_MINI_MASK)
-
+            
+            if verbose:
+                print ('Time taken for BB and Mask : {0}'.format(round(time.time() - t0,2)))
             # Skip images that have no instances. This can happen in cases
             # where we train on a subset of classes and the image doesn't
             # have any of the classes we care about.
@@ -1653,6 +1658,8 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             # RPN Targets
             rpn_match, rpn_bbox = build_rpn_targets(image.shape, anchors,
                                                     gt_class_ids, gt_boxes, config)
+            if verbose:
+                print ('Time taken for RPN targets : {0}'.format(round(time.time() - t0,2)))
             # log('[PLAY][data_generator] rpn_match : {0} rpn_bbox : {1}'.format(rpn_match.shape, rpn_bbox.shape))
 
             # Mask R-CNN Targets
@@ -1663,6 +1670,8 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                     rois, mrcnn_class_ids, mrcnn_bbox, mrcnn_mask =\
                         build_detection_targets(
                             rpn_rois, gt_class_ids, gt_boxes, gt_masks, config)
+            if verbose:
+                print ('Time taken for Random Rois  : {0}'.format(round(time.time() - t0,2)))
 
             # Init batch arrays
             if b == 0:
@@ -1737,7 +1746,9 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
                             batch_mrcnn_class_ids, -1)
                         outputs.extend(
                             [batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
-
+                
+                time_delta = round(time.time() - t0, 2)
+                print ('Time Taken for one batch : ', time_delta)
                 yield inputs, outputs
 
                 # start a new batch
