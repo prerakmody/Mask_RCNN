@@ -98,7 +98,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         _, ax = plt.subplots(1, figsize=figsize)
 
     # Generate random colors
-    colors = random_colors(N)
+   
+    colors = random_colors(np.max(class_ids))
 
     # Show area outside image boundaries.
     height, width = image.shape[:2]
@@ -110,7 +111,9 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     masked_image = image.astype(np.uint32).copy()
     
     for i in range(N):
-        color = colors[i]
+        color = colors[class_ids[i] - 1]
+        if class_ids[i] == 12:
+            continue
         
         if show_boxes or show_captions:
             # Bounding box
