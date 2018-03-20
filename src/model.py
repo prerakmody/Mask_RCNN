@@ -8,6 +8,7 @@ Written by Waleed Abdulla
 """
 
 import src.utils as utils
+import src.parallel_model as parallel_model
 
 import os
 import sys
@@ -1038,6 +1039,7 @@ def rpn_bbox_loss_graph(config, target_bbox, rpn_match, rpn_bbox):
                -1=negative, 0=neutral anchor.
     rpn_bbox: [batch, anchors, (dy, dx, log(dh), log(dw))]
     """
+    
     # Positive anchors contribute to the loss, but negative and
     # neutral anchors (match value of 0 or -1) don't.
     rpn_match = K.squeeze(rpn_match, -1)
@@ -1771,14 +1773,14 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             if error_count > 5:
                 raise
 
-def data_generator_play(url_dataset):
+def data_generator_play(url_dataset, verbose = 0):
     error_count = 0
     while True:
         for each in os.listdir(url_dataset):
             try:
                 url_tmp = os.path.join(url_dataset, each)
                 ip, op = [], []
-                # print (' --> ', url_tmp)
+                if verbose : print (' --> ', url_tmp)
                 with h5py.File(url_tmp, "r") as hf:
                     ip, op = [], []
                     for name in hf:
@@ -2057,8 +2059,8 @@ class MaskRCNN():
 
         # Add multi-GPU support.
         if config.GPU_COUNT > 1:
-            from parallel_model import ParallelModel
-            model = ParallelModel(model, config.GPU_COUNT)
+            print ('Building a parallel model with {0} GPUs'.format(config.GPU_COUNT))
+            model = parallel_model.ParallelModel(model, config.GPU_COUNT)
 
         return model
 
@@ -2311,6 +2313,16 @@ class MaskRCNN():
         log("\nStarting at epoch {}. LR={}\n".format(self.epoch, learning_rate))
         log("Checkpoint Path: {}".format(self.checkpoint_path))
         self.set_trainable(layers)
+        
+        # if multi_gpu > 0:
+            # OPTION1 : https://keras.io/utils/#multi_gpu_model
+            # from keras.utils.training_utils import multi_gpu_model
+            # self.keras_model = multi_gpu_model(self.keras_model, gpus=multi_gpu)
+            
+            # OPTION2 : BROS OPTION
+            # self.keras_model = parallel_model.ParallelModel(self.keras_model, 2)
+            # pass
+        
         self.compile(learning_rate, self.config.LEARNING_MOMENTUM)
         
         trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.trainable_weights)]))
@@ -2326,7 +2338,7 @@ class MaskRCNN():
             workers = 0
         else:
             workers = max(self.config.BATCH_SIZE // 2, 2)
-        workers = 0
+        # workers = 0
         
         print ('Compiled and using {0} workers! \n'.format(workers))
         
@@ -2341,7 +2353,7 @@ class MaskRCNN():
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=workers,
-            use_multiprocessing=False,
+            use_multiprocessing=True,
         )
         self.epoch = max(self.epoch, epochs)
 

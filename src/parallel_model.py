@@ -27,11 +27,12 @@ class ParallelModel(KM.Model):
     outputs.
     """
 
-    def __init__(self, keras_model, gpu_count):
+    def __init__(self, keras_model, gpu_count, verbose = 0):
         """Class constructor.
         keras_model: The Keras model to parallelize
         gpu_count: Number of GPUs. Must be > 1
         """
+        self.verbose = verbose    
         self.inner_model = keras_model
         self.gpu_count = gpu_count
         merged_outputs = self.make_parallel()
@@ -57,6 +58,9 @@ class ParallelModel(KM.Model):
         """
         # Slice inputs. Slice inputs on the CPU to avoid sending a copy
         # of the full inputs to all GPUs. Saves on bandwidth and memory.
+        if self.verbose:
+            for each in zip(self.inner_model.input_names, self.inner_model.inputs):
+                print ('---> ', each)
         input_slices = {name: tf.split(x, self.gpu_count)
                         for name, x in zip(self.inner_model.input_names,
                                            self.inner_model.inputs)}
@@ -78,7 +82,19 @@ class ParallelModel(KM.Model):
                                   output_shape=lambda s: (None,) + s[1:])(tensor)
                         for name, tensor in zipped_inputs]
                     # Create the model replica and get the outputs
+                    if self.verbose:
+                        if i == 0:
+                            print ('\ntower_{0} - i/p '.format(i))
+                            for each in inputs:
+                                print ('--->', each)
+                    
                     outputs = self.inner_model(inputs)
+                    if self.verbose:
+                        if i == 0:
+                            print ('\ntower_{0} - o/p '.format(i))
+                            for each in outputs:
+                                print ('--->', each)
+                                
                     if not isinstance(outputs, list):
                         outputs = [outputs]
                     # Save the outputs for merging back together later
@@ -102,72 +118,72 @@ class ParallelModel(KM.Model):
         return merged
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # Testing code below. It creates a simple model to train on MNIST and
     # tries to run it on 2 GPUs. It saves the graph so it can be viewed
     # in TensorBoard. Run it as:
     #
     # python3 parallel_model.py
 
-    import os
-    import numpy as np
-    import keras.optimizers
-    from keras.datasets import mnist
-    from keras.preprocessing.image import ImageDataGenerator
+#     import os
+#     import numpy as np
+#     import keras.optimizers
+#     from keras.datasets import mnist
+#     from keras.preprocessing.image import ImageDataGenerator
 
-    GPU_COUNT = 2
+#     GPU_COUNT = 2
 
-    # Root directory of the project
-    ROOT_DIR = os.getcwd()
+#     # Root directory of the project
+#     ROOT_DIR = os.getcwd()
 
-    # Directory to save logs and trained model
-    MODEL_DIR = os.path.join(ROOT_DIR, "logs/parallel")
+#     # Directory to save logs and trained model
+#     MODEL_DIR = os.path.join(ROOT_DIR, "logs/parallel")
 
-    def build_model(x_train, num_classes):
-        # Reset default graph. Keras leaves old ops in the graph,
-        # which are ignored for execution but clutter graph
-        # visualization in TensorBoard.
-        tf.reset_default_graph()
+#     def build_model(x_train, num_classes):
+#         # Reset default graph. Keras leaves old ops in the graph,
+#         # which are ignored for execution but clutter graph
+#         # visualization in TensorBoard.
+#         tf.reset_default_graph()
 
-        inputs = KL.Input(shape=x_train.shape[1:], name="input_image")
-        x = KL.Conv2D(32, (3, 3), activation='relu', padding="same",
-                      name="conv1")(inputs)
-        x = KL.Conv2D(64, (3, 3), activation='relu', padding="same",
-                      name="conv2")(x)
-        x = KL.MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
-        x = KL.Flatten(name="flat1")(x)
-        x = KL.Dense(128, activation='relu', name="dense1")(x)
-        x = KL.Dense(num_classes, activation='softmax', name="dense2")(x)
+#         inputs = KL.Input(shape=x_train.shape[1:], name="input_image")
+#         x = KL.Conv2D(32, (3, 3), activation='relu', padding="same",
+#                       name="conv1")(inputs)
+#         x = KL.Conv2D(64, (3, 3), activation='relu', padding="same",
+#                       name="conv2")(x)
+#         x = KL.MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
+#         x = KL.Flatten(name="flat1")(x)
+#         x = KL.Dense(128, activation='relu', name="dense1")(x)
+#         x = KL.Dense(num_classes, activation='softmax', name="dense2")(x)
 
-        return KM.Model(inputs, x, "digit_classifier_model")
+#         return KM.Model(inputs, x, "digit_classifier_model")
 
-    # Load MNIST Data
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    x_train = np.expand_dims(x_train, -1).astype('float32') / 255
-    x_test = np.expand_dims(x_test, -1).astype('float32') / 255
+#     # Load MNIST Data
+#     (x_train, y_train), (x_test, y_test) = mnist.load_data()
+#     x_train = np.expand_dims(x_train, -1).astype('float32') / 255
+#     x_test = np.expand_dims(x_test, -1).astype('float32') / 255
 
-    print('x_train shape:', x_train.shape)
-    print('x_test shape:', x_test.shape)
+#     print('x_train shape:', x_train.shape)
+#     print('x_test shape:', x_test.shape)
 
-    # Build data generator and model
-    datagen = ImageDataGenerator()
-    model = build_model(x_train, 10)
+#     # Build data generator and model
+#     datagen = ImageDataGenerator()
+#     model = build_model(x_train, 10)
 
-    # Add multi-GPU support.
-    model = ParallelModel(model, GPU_COUNT)
+#     # Add multi-GPU support.
+#     model = ParallelModel(model, GPU_COUNT)
 
-    optimizer = keras.optimizers.SGD(lr=0.01, momentum=0.9, clipnorm=5.0)
+#     optimizer = keras.optimizers.SGD(lr=0.01, momentum=0.9, clipnorm=5.0)
 
-    model.compile(loss='sparse_categorical_crossentropy',
-                  optimizer=optimizer, metrics=['accuracy'])
+#     model.compile(loss='sparse_categorical_crossentropy',
+#                   optimizer=optimizer, metrics=['accuracy'])
 
-    model.summary()
+#     model.summary()
 
-    # Train
-    model.fit_generator(
-        datagen.flow(x_train, y_train, batch_size=64),
-        steps_per_epoch=50, epochs=10, verbose=1,
-        validation_data=(x_test, y_test),
-        callbacks=[keras.callbacks.TensorBoard(log_dir=MODEL_DIR,
-                                               write_graph=True)]
-    )
+#     # Train
+#     model.fit_generator(
+#         datagen.flow(x_train, y_train, batch_size=64),
+#         steps_per_epoch=50, epochs=10, verbose=1,
+#         validation_data=(x_test, y_test),
+#         callbacks=[keras.callbacks.TensorBoard(log_dir=MODEL_DIR,
+#                                                write_graph=True)]
+#     )
