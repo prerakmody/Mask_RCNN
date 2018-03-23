@@ -32,6 +32,7 @@ import keras.layers as KL
 import keras.initializers as KI
 import keras.engine as KE
 import keras.models as KM
+from keras.utils.training_utils import multi_gpu_model
 
 if K.backend() =='tensorflow':
     keras.backend.set_image_dim_ordering('tf')
@@ -1773,7 +1774,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
             if error_count > 5:
                 raise
 
-def data_generator_play(url_dataset, verbose = 0):
+def data_generator_play(url_dataset, verbose):
     error_count = 0
     while True:
         for each in os.listdir(url_dataset):
@@ -1820,6 +1821,7 @@ class MaskRCNN():
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
+        # with tf.device('/cpu:0'):
         self.keras_model = self.build(mode=mode, config=config, verbose=False)
 
     def build(self, mode, config, verbose):
@@ -1838,65 +1840,67 @@ class MaskRCNN():
                             "For example, use 256, 320, 384, 448, 512, ... etc. ")
 
         # Inputs
-        input_image = KL.Input(
-            shape=config.IMAGE_SHAPE.tolist(), name="input_image")
-        input_image_meta = KL.Input(shape=[None], name="input_image_meta")
-        if mode == "training":
-            # RPN GT
-            input_rpn_match = KL.Input(
-                shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
-            input_rpn_bbox = KL.Input(
-                shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
+        with tf.name_scope('PLAY__Inputs'):
+            input_image = KL.Input(
+                shape=config.IMAGE_SHAPE.tolist(), name="input_image")
+            input_image_meta = KL.Input(shape=[None], name="input_image_meta")
+            if mode == "training":
+                # RPN GT
+                input_rpn_match = KL.Input(
+                    shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
+                input_rpn_bbox = KL.Input(
+                    shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
 
-            # Detection GT (class IDs, bounding boxes, and masks)
-            # 1. GT Class IDs (zero padded)
-            input_gt_class_ids = KL.Input(
-                shape=[None], name="input_gt_class_ids", dtype=tf.int32)
-            # 2. GT Boxes in pixels (zero padded)
-            # [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)] in image coordinates
-            input_gt_boxes = KL.Input(
-                shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
-            # Normalize coordinates
-            h, w = K.shape(input_image)[1], K.shape(input_image)[2]
-            image_scale = K.cast(K.stack([h, w, h, w], axis=0), tf.float32)
-            gt_boxes = KL.Lambda(lambda x: x / image_scale)(input_gt_boxes)
-            # 3. GT Masks (zero padded)
-            # [batch, height, width, MAX_GT_INSTANCES]
-            if config.USE_MINI_MASK:
-                input_gt_masks = KL.Input(
-                    shape=[config.MINI_MASK_SHAPE[0],
-                           config.MINI_MASK_SHAPE[1], None],
-                    name="input_gt_masks", dtype=bool)
-            else:
-                input_gt_masks = KL.Input(
-                    shape=[config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1], None],
-                    name="input_gt_masks", dtype=bool)
+                # Detection GT (class IDs, bounding boxes, and masks)
+                # 1. GT Class IDs (zero padded)
+                input_gt_class_ids = KL.Input(
+                    shape=[None], name="input_gt_class_ids", dtype=tf.int32)
+                # 2. GT Boxes in pixels (zero padded)
+                # [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)] in image coordinates
+                input_gt_boxes = KL.Input(
+                    shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
+                # Normalize coordinates
+                h, w = K.shape(input_image)[1], K.shape(input_image)[2]
+                image_scale = K.cast(K.stack([h, w, h, w], axis=0), tf.float32)
+                gt_boxes = KL.Lambda(lambda x: x / image_scale)(input_gt_boxes)
+                # 3. GT Masks (zero padded)
+                # [batch, height, width, MAX_GT_INSTANCES]
+                if config.USE_MINI_MASK:
+                    input_gt_masks = KL.Input(
+                        shape=[config.MINI_MASK_SHAPE[0],
+                               config.MINI_MASK_SHAPE[1], None],
+                        name="input_gt_masks", dtype=bool)
+                else:
+                    input_gt_masks = KL.Input(
+                        shape=[config.IMAGE_SHAPE[0], config.IMAGE_SHAPE[1], None],
+                        name="input_gt_masks", dtype=bool)
 
-        # Build the shared convolutional layers.
-        # Bottom-up Layers
-        # Returns a list of the last layers of each stage, 5 in total.
-        # Don't create the thead (stage 5), so we pick the 4th item in the list.
-        _, C2, C3, C4, C5 = resnet_graph(input_image, "resnet101", stage5=True)
-        # Top-down Layers
-        # TODO: add assert to varify feature map sizes match what's in config
-        P5 = KL.Conv2D(256, (1, 1), name='fpn_c5p5')(C5)
-        P4 = KL.Add(name="fpn_p4add")([
-            KL.UpSampling2D(size=(2, 2), name="fpn_p5upsampled")(P5),
-            KL.Conv2D(256, (1, 1), name='fpn_c4p4')(C4)])
-        P3 = KL.Add(name="fpn_p3add")([
-            KL.UpSampling2D(size=(2, 2), name="fpn_p4upsampled")(P4),
-            KL.Conv2D(256, (1, 1), name='fpn_c3p3')(C3)])
-        P2 = KL.Add(name="fpn_p2add")([
-            KL.UpSampling2D(size=(2, 2), name="fpn_p3upsampled")(P3),
-            KL.Conv2D(256, (1, 1), name='fpn_c2p2')(C2)])
-        # Attach 3x3 conv to all P layers to get the final feature maps.
-        P2 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p2")(P2)
-        P3 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p3")(P3)
-        P4 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p4")(P4)
-        P5 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p5")(P5)
-        # P6 is used for the 5th anchor scale in RPN. Generated by
-        # subsampling from P5 with stride of 2.
-        P6 = KL.MaxPooling2D(pool_size=(1, 1), strides=2, name="fpn_p6")(P5)
+        with tf.name_scope('PLAY__Shared_Layers'):
+            # Build the shared convolutional layers.
+            # Bottom-up Layers
+            # Returns a list of the last layers of each stage, 5 in total.
+            # Don't create the thead (stage 5), so we pick the 4th item in the list.
+            _, C2, C3, C4, C5 = resnet_graph(input_image, "resnet101", stage5=True)
+            # Top-down Layers
+            # TODO: add assert to varify feature map sizes match what's in config
+            P5 = KL.Conv2D(256, (1, 1), name='fpn_c5p5')(C5)
+            P4 = KL.Add(name="fpn_p4add")([
+                KL.UpSampling2D(size=(2, 2), name="fpn_p5upsampled")(P5),
+                KL.Conv2D(256, (1, 1), name='fpn_c4p4')(C4)])
+            P3 = KL.Add(name="fpn_p3add")([
+                KL.UpSampling2D(size=(2, 2), name="fpn_p4upsampled")(P4),
+                KL.Conv2D(256, (1, 1), name='fpn_c3p3')(C3)])
+            P2 = KL.Add(name="fpn_p2add")([
+                KL.UpSampling2D(size=(2, 2), name="fpn_p3upsampled")(P3),
+                KL.Conv2D(256, (1, 1), name='fpn_c2p2')(C2)])
+            # Attach 3x3 conv to all P layers to get the final feature maps.
+            P2 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p2")(P2)
+            P3 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p3")(P3)
+            P4 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p4")(P4)
+            P5 = KL.Conv2D(256, (3, 3), padding="SAME", name="fpn_p5")(P5)
+            # P6 is used for the 5th anchor scale in RPN. Generated by
+            # subsampling from P5 with stride of 2.
+            P6 = KL.MaxPooling2D(pool_size=(1, 1), strides=2, name="fpn_p6")(P5)
 
         # Note that P6 is used in RPN, but not in the classifier heads.
         rpn_feature_maps = [P2, P3, P4, P5, P6]
@@ -1911,41 +1915,43 @@ class MaskRCNN():
 
 
         # RPN Model
-        rpn = build_rpn_model(config.RPN_ANCHOR_STRIDE,
-                              len(config.RPN_ANCHOR_RATIOS), 256)
-        # Loop through pyramid layers
-        layer_outputs = []  # list of lists
-        for p in rpn_feature_maps:
-            layer_outputs.append(rpn([p]))
-        if verbose:
-            for each in layer_outputs:
-                pass
-                # log('[Playment] layer_output:{0}'.format(each))
+        with tf.name_scope('PLAY__Region_Proposal_Network'):
+            rpn = build_rpn_model(config.RPN_ANCHOR_STRIDE,
+                                  len(config.RPN_ANCHOR_RATIOS), 256)
+            # Loop through pyramid layers
+            layer_outputs = []  # list of lists
+            for p in rpn_feature_maps:
+                layer_outputs.append(rpn([p]))
 
-        # Concatenate layer outputs
-        # Convert from list of lists of level outputs to list of lists
-        # of outputs across levels.
-        # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
-        output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
-        outputs = list(zip(*layer_outputs))
-        if verbose:
-            # log('---------------------')
-            for each in outputs:
-                pass
-                # log('outputs {0}'.format(outputs))
+            if verbose:
+                for each in layer_outputs:
+                    pass
+                    # log('[Playment] layer_output:{0}'.format(each))
 
-
-        outputs = [KL.Concatenate(axis=1, name=n)(list(o))
-                   for o, n in zip(outputs, output_names)]
-
-        if verbose:
-            # log('---------------------')
-            for each in outputs:
-                pass
-                # log('outputs {0}'.format(outputs))
+            # Concatenate layer outputs
+            # Convert from list of lists of level outputs to list of lists
+            # of outputs across levels.
+            # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
+            output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
+            outputs = list(zip(*layer_outputs))
+            if verbose:
+                # log('---------------------')
+                for each in outputs:
+                    pass
+                    # log('outputs {0}'.format(outputs))
 
 
-        rpn_class_logits, rpn_class, rpn_bbox = outputs
+            outputs = [KL.Concatenate(axis=1, name=n)(list(o))
+                       for o, n in zip(outputs, output_names)]
+
+            if verbose:
+                # log('---------------------')
+                for each in outputs:
+                    pass
+                    # log('outputs {0}'.format(outputs))
+
+
+            rpn_class_logits, rpn_class, rpn_bbox = outputs
 
         # Generate proposals
         # Proposals are [batch, N, (y1, x1, y2, x2)] in normalized coordinates
@@ -1974,13 +1980,15 @@ class MaskRCNN():
             else:
                 target_rois = rpn_rois
 
-            # Generate detection targets
-            # Subsamples proposals and generates target outputs for training
-            # Note that proposal class IDs, gt_boxes, and gt_masks are zero
-            # padded. Equally, returned rois and targets are zero padded.
-            rois, target_class_ids, target_bbox, target_mask =\
-                DetectionTargetLayer(config, name="proposal_targets")([
-                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
+            with tf.name_scope('PLAY__Detection_Target_Layer'):
+                # Generate detection targets
+                # Subsamples proposals and generates target outputs for training
+                # Note that proposal class IDs, gt_boxes, and gt_masks are zero
+                # padded. Equally, returned rois and targets are zero padded.
+                rois, target_class_ids, target_bbox, target_mask =\
+                    DetectionTargetLayer(config, name="proposal_targets")([
+                        target_rois, input_gt_class_ids, gt_boxes, input_gt_masks])
+            
             if verbose:
                 log('\n--------------------------')
                 log('[play] rois : {0}'.format(rois.shape))
@@ -2005,16 +2013,17 @@ class MaskRCNN():
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
             # Losses
-            rpn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="rpn_class_loss")(
-                [input_rpn_match, rpn_class_logits])
-            rpn_bbox_loss = KL.Lambda(lambda x: rpn_bbox_loss_graph(config, *x), name="rpn_bbox_loss")(
-                [input_rpn_bbox, input_rpn_match, rpn_bbox])
-            class_loss = KL.Lambda(lambda x: mrcnn_class_loss_graph(*x), name="mrcnn_class_loss")(
-                [target_class_ids, mrcnn_class_logits, active_class_ids])
-            bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
-                [target_bbox, target_class_ids, mrcnn_bbox])
-            mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
-                [target_mask, target_class_ids, mrcnn_mask])
+            with tf.name_scope('PLAY__Losses'):
+                rpn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="rpn_class_loss")(
+                    [input_rpn_match, rpn_class_logits])
+                rpn_bbox_loss = KL.Lambda(lambda x: rpn_bbox_loss_graph(config, *x), name="rpn_bbox_loss")(
+                    [input_rpn_bbox, input_rpn_match, rpn_bbox])
+                class_loss = KL.Lambda(lambda x: mrcnn_class_loss_graph(*x), name="mrcnn_class_loss")(
+                    [target_class_ids, mrcnn_class_logits, active_class_ids])
+                bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
+                    [target_bbox, target_class_ids, mrcnn_bbox])
+                mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
+                    [target_mask, target_class_ids, mrcnn_mask])
 
             # Model
             inputs = [input_image, input_image_meta,
@@ -2059,8 +2068,15 @@ class MaskRCNN():
 
         # Add multi-GPU support.
         if config.GPU_COUNT > 1:
-            print ('Building a parallel model with {0} GPUs'.format(config.GPU_COUNT))
-            model = parallel_model.ParallelModel(model, config.GPU_COUNT)
+            if config.GPU_IMPL_TYPE == 'keras':
+                print ('Building a parallel model with {0} GPUs and {1} code'.format(config.GPU_COUNT, 'keras'))
+                # https://github.com/keras-team/keras/blob/master/keras/utils/multi_gpu_utils.py
+                # model = multi_gpu_model(model, gpus=config.GPU_COUNT)
+                parallel_model.multi_gpu_model(model, gpus=config.GPU_COUNT)
+            else:
+                print ('Building a parallel model with {0} GPUs and {1} code'.format(config.GPU_COUNT, 'self'))
+                model = parallel_model.ParallelModel(model, config.GPU_COUNT)
+                
 
         return model
 
@@ -2141,7 +2157,7 @@ class MaskRCNN():
                                 md5_hash='a268eb855778b3df3c7506639542a6af')
         return weights_path
 
-    def compile(self, learning_rate, momentum):
+    def compile(self, learning_rate, momentum, run_options, run_metadata):
         """Gets the model ready for training. Adds losses, regularization, and
         metrics. Then calls the Keras compile() function.
         """
@@ -2168,10 +2184,13 @@ class MaskRCNN():
                       for w in self.keras_model.trainable_weights
                       if 'gamma' not in w.name and 'beta' not in w.name]
         self.keras_model.add_loss(tf.add_n(reg_losses))
-
+        
         # Compile
-        self.keras_model.compile(optimizer=optimizer, loss=[
-                                 None] * len(self.keras_model.outputs))
+        if len(run_options) and len(run_metadata):
+            self.keras_model.compile(optimizer=optimizer, loss=[
+                                     None] * len(self.keras_model.outputs), options=run_options, run_metadata=run_metadata)
+        else:
+            self.keras_model.compile(optimizer=optimizer, loss=[None] * len(self.keras_model.outputs))
 
         # Add metrics for losses
         for name in loss_names:
@@ -2187,8 +2206,8 @@ class MaskRCNN():
         the given regular expression.
         """
         # Print message on the first call (but not on recursive calls)
-        if verbose > 0 and keras_model is None:
-            log("Selecting layers to train")
+        # if verbose > 0 and keras_model is None:
+        #     log("Selecting layers to train")
 
         keras_model = keras_model or self.keras_model
 
@@ -2200,7 +2219,7 @@ class MaskRCNN():
         for layer in layers:
             # Is the layer a model?
             if layer.__class__.__name__ == 'Model':
-                print("In model: ", layer.name)
+                # print("In model: ", layer.name)
                 self.set_trainable(
                     layer_regex, keras_model=layer, indent=indent + 4)
                 continue
@@ -2254,7 +2273,9 @@ class MaskRCNN():
         self.checkpoint_path = self.checkpoint_path.replace(
             "*epoch*", "{epoch:04d}")
 
-    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers):
+    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers
+              , use_multiprocessing=False, use_workers = None
+              , verbose_generator=False):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
         learning_rate: The learning rate to train with
@@ -2295,8 +2316,8 @@ class MaskRCNN():
                                            batch_size=self.config.BATCH_SIZE,
                                            augment=False)
         else:
-            train_generator = data_generator_play(train_dataset) # this is a url
-            val_generator   = data_generator_play(val_dataset)   # this is a url
+            train_generator = data_generator_play(train_dataset, verbose_generator) # this is a url
+            val_generator   = data_generator_play(val_dataset  , verbose_generator)   # this is a url
 
         # log('train_generator : {}'.format(train_generator))
         # log('val_generator : {}'.format(val_generator))
@@ -2307,6 +2328,7 @@ class MaskRCNN():
                                         histogram_freq=0, write_graph=True, write_images=False),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
                                             verbose=0, save_weights_only=True),
+            # keras.callbacks.TerminateOnNaN()
         ]
 
         # Train
@@ -2314,16 +2336,15 @@ class MaskRCNN():
         log("Checkpoint Path: {}".format(self.checkpoint_path))
         self.set_trainable(layers)
         
-        # if multi_gpu > 0:
-            # OPTION1 : https://keras.io/utils/#multi_gpu_model
-            # from keras.utils.training_utils import multi_gpu_model
-            # self.keras_model = multi_gpu_model(self.keras_model, gpus=multi_gpu)
-            
-            # OPTION2 : BROS OPTION
-            # self.keras_model = parallel_model.ParallelModel(self.keras_model, 2)
-            # pass
+        profiling = 0
+        if profiling:
+            from tensorflow.python.client import timeline
+            run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
+            run_metadata = tf.RunMetadata()
         
-        self.compile(learning_rate, self.config.LEARNING_MOMENTUM)
+            self.compile(learning_rate, self.config.LEARNING_MOMENTUM, run_options, run_metadata)
+        else:
+            self.compile(learning_rate, self.config.LEARNING_MOMENTUM, [], [])
         
         trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.trainable_weights)]))
         non_trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.non_trainable_weights)]))
@@ -2338,11 +2359,14 @@ class MaskRCNN():
             workers = 0
         else:
             workers = max(self.config.BATCH_SIZE // 2, 2)
-        # workers = 0
+        
+        if use_workers != None:
+            workers = use_workers
         
         print ('Compiled and using {0} workers! \n'.format(workers))
         
-        #https://github.com/tensorflow/tensorflow/blob/r1.6/tensorflow/python/keras/_impl/keras/engine/training.py
+        # https://github.com/tensorflow/tensorflow/blob/r1.6/tensorflow/python/keras/_impl/keras/engine/training.py
+        # https://keras.io/models/sequential/#sequential-model-methods
         self.keras_model.fit_generator(
             train_generator,
             initial_epoch=self.epoch,
@@ -2353,9 +2377,14 @@ class MaskRCNN():
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
             workers=workers,
-            use_multiprocessing=True,
+            use_multiprocessing=False,
         )
         self.epoch = max(self.epoch, epochs)
+        
+        if profiling:
+            trace = timeline.Timeline(step_stats=run_metadata.step_stats)
+            with open('timeline.ctf.json', 'w') as f:
+                f.write(trace.generate_chrome_trace_format())
 
     def mold_inputs(self, images):
         """Takes a list of images and modifies them to the format expected

@@ -16,7 +16,8 @@ import src.utils as utils
 
 class MapillaryConfig(Config):
     NAME = "mapillary"
-
+    
+    GPU_IMPL_TYPE = 'self'
     GPU_COUNT = 1
     IMAGES_PER_GPU = 8
     
