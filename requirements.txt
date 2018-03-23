@@ -1,0 +1,10 @@
+tensorflow-gpu
+keras
+opencv-python
+Pillow
+scikit-image
+shapely
+descartes
+matplotlib
+h5py
+python3-tk
