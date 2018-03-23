@@ -8,6 +8,7 @@ Written by Waleed Abdulla
 """
 
 import src.utils as utils
+import src.parallel_model as parallel_model
 
 import os
 import sys
@@ -1632,7 +1633,7 @@ def data_generator(dataset, config, shuffle=True, augment=True, random_rois=0,
     #     log('[PLAY][data_generator] anchor : {0}'.format(anchor))
 
     # Keras requires a generator to run indefinately.
-    verbose = 1
+    verbose = 0
     while True:
         try:
             t0 = time.time()
@@ -2270,6 +2271,9 @@ class MaskRCNN():
         log("\nStarting at epoch {}. LR={}\n".format(self.epoch, learning_rate))
         log("Checkpoint Path: {}".format(self.checkpoint_path))
         self.set_trainable(layers)
+        
+        self.keras_model = parallel_model.ParallelModel(self.keras_model, 2)
+        
         self.compile(learning_rate, self.config.LEARNING_MOMENTUM)
         
         trainable_count = int(np.sum([K.count_params(p) for p in set(self.keras_model.trainable_weights)]))

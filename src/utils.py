@@ -835,3 +835,32 @@ def download_trained_weights(coco_model_path, verbose=1):
         shutil.copyfileobj(resp, out)
     if verbose > 0:
         print("... done downloading pretrained model!")
+
+##############################################################
+def helper_resize_image(image, IMAGE_MAX_DIM, show=False, verbose=False):
+        if verbose:
+            print ('-->', img.shape, list(np.unique(img)))
+        
+        # Image dimensions
+        if len(image.shape) == 3:
+            (r, c, ch) = image.shape
+        elif len(image.shape) == 2:
+            (r, c)   = image.shape
+        
+        # Resize image to have max dimension MAX_DIM
+        if r > c:
+            new_r = IMAGE_MAX_DIM
+            new_c = round(c / r * IMAGE_MAX_DIM)
+        else:
+            new_c = IMAGE_MAX_DIM
+            new_r = round(r / c * IMAGE_MAX_DIM)
+        resized_image = skimage.transform.resize(image, (new_r, new_c), preserve_range=True, mode='reflect').astype('uint8')
+        
+        if verbose:
+            print ('-------->', img_trans.shape, list(np.unique(img_trans)))
+        if show:
+            f,axarr = plt.subplots(1,2, figsize=(15,15))
+            axarr[0].imshow(img)
+            axarr[1].imshow(img_trans)
+        
+        return resized_image

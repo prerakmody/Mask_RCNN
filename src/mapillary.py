@@ -33,8 +33,8 @@ class MapillaryConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 30
     ROI_POSITIVE_RATIO = 0.9
     
-    # STEPS_PER_EPOCH = 1
-    STEPS_PER_EPOCH = 2250
+    STEPS_PER_EPOCH = 2
+    # STEPS_PER_EPOCH = 2250
     VALIDATION_STEPS = 2
 
 

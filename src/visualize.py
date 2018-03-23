@@ -7,6 +7,7 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
+import mpld3
 import random
 import itertools
 import colorsys
@@ -63,7 +64,7 @@ def random_colors(N, bright=True):
     return colors
 
 
-def apply_mask(image, mask, color, alpha=0.5):
+def apply_mask(image, mask, color, alpha=0.2):
     """Apply the given mask to the image.
     """
     for c in range(3):
@@ -74,10 +75,12 @@ def apply_mask(image, mask, color, alpha=0.5):
     return image
 
 
-def display_instances(image, boxes, masks, class_ids, class_names,
-                      scores=None, title="",
-                      figsize=(20, 20), ax=None, show_captions=True, show_boxes=True, show_mask_boundary=True
-                      , save_fig = False):
+def display_instances(image, boxes, masks, class_ids, class_names, class_ids_exclude = []
+                      , show_captions=True, show_boxes=True, show_mask_boundary=True
+                      , save_fig = False, save_url = None
+                      , scores=None, title=""
+                      , figsize=(20, 20)
+                      , ax=None):
     """
     boxes: [num_instance, (y1, x1, y2, x2, class_id)] in image coordinates.
     masks: [height, width, num_instances]
@@ -86,8 +89,10 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     scores: (optional) confidence scores for each box
     figsize: (optional) the size of the image.
     """
-    # Number of instances
+    ## mpld3
+    use_mpld3 = 1
     
+    # Number of instances
     N = boxes.shape[0]
     if not N:
         print("\n*** No instances to display *** \n")
@@ -98,20 +103,27 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         _, ax = plt.subplots(1, figsize=figsize)
 
     # Generate random colors
-    colors = random_colors(N)
+    # colors = random_colors(N)
+    colors = random_colors(np.max(class_ids))
 
-    # Show area outside image boundaries.
-    height, width = image.shape[:2]
-    ax.set_ylim(height + 10, -10)
-    ax.set_xlim(-10, width + 10)
-    ax.axis('off')
-    ax.set_title(title)
+    if use_mpld3:
+        # Show area outside image boundaries.
+        height, width = image.shape[:2]
+        ax.set_ylim(height + 10, -10)
+        ax.set_xlim(-10, width + 10)
+        ax.axis('off')
+        ax.set_title(title)
+    else:
+        ax.axis('off')
 
     masked_image = image.astype(np.uint32).copy()
     
     for i in range(N):
-        color = colors[i]
-        
+        # color = colors[i]
+        color = colors[class_ids[i] - 1]
+        if int(class_ids[i]) in class_ids_exclude:
+            continue
+            
         if show_boxes or show_captions:
             # Bounding box
             if not np.any(boxes[i]):
@@ -156,12 +168,89 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     
     
     if save_fig:
-        skimage.io.imsave('./test_img.jpg', masked_image.astype('uint8'))
+        skimage.io.imsave(save_url, masked_image.astype('uint8'))
     else:
         ax.imshow(masked_image.astype(np.uint8))
+        # ax.imshow(masked_image.astype(np.uint8), origin='lower')
         plt.show()
     
 
+def display_instances_play(image, boxes, masks, class_ids, class_names, scores=None, class_ids_exclude = []
+                      , show_captions=True, show_boxes=True, show_mask_boundary=True
+                      , save_fig = False, save_url = None
+                      , title="", figsize=(20, 20), ax=None):
+    
+    ## STEP0 : PREPARE PLOT
+    f, ax = plt.subplots(1, figsize=(10,10))
+    ax.axis('off')
+    # ax.grid(color='white', linestyle='solid')
+    masked_image = image.astype(np.uint32).copy()
+    
+    ## STEP0 : PREPARE GLOBAL VARS
+    N              = boxes.shape[0]
+    colors         = random_colors(np.max(class_ids))
+    play_rects     = []
+    play_classname = []
+    x_pts = []
+    y_pts = []
+    for i in range(N):
+        color = colors[class_ids[i] - 1]
+        if int(class_ids[i]) in class_ids_exclude:
+            continue
+        
+        ## STEP1
+        if show_boxes or show_captions:
+            if not np.any(boxes[i]):
+                continue
+            y1, x1, y2, x2 = boxes[i]
+                
+        ## STEP2
+        if show_boxes:
+            p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
+                                  alpha=0.7, linestyle="dashed",
+                                  edgecolor=color, facecolor='none')
+            ax.add_patch(p)
+            play_rects.append(p)
+            centerCoord = ((x1+x2)/2, (y1+y2)/2)
+            x_pts.append(centerCoord[0]); y_pts.append(centerCoord[1])
+            
+        ## STEP3
+        if show_captions:
+            class_id = class_ids[i]
+            score = scores[i] if scores is not None else None
+            label = class_names[class_id]
+            play_classname.append(label)
+            x = random.randint(x1, (x1 + x2) // 2)
+            caption = "{} {:.3f}".format(label, score) if score else label
+            caption = label
+            ax.text(x1, y1 + 8, caption,
+                    color='w', size=11, backgroundcolor="none")
+        
+        # STEP4
+        mask = masks[:, :, i]
+        masked_image = apply_mask(masked_image, mask, color)
+        
+        ## STEP5
+        if show_mask_boundary:
+            # Mask Polygon
+            # Pad to ensure proper polygons for masks that touch image edges.
+            padded_mask = np.zeros(
+                (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+            padded_mask[1:-1, 1:-1] = mask
+            contours = find_contours(padded_mask, 0.5)
+            for verts in contours:
+                # Subtract the padding and flip (y, x) to (x, y)
+                verts = np.fliplr(verts) - 1
+                p = Polygon(verts, facecolor="none", edgecolor=color)
+                ax.add_patch(p)
+    
+    mpld3.plugins.get_plugins(f).pop()
+    ax.imshow(masked_image)
+    
+    if save_fig:
+        plt.savefig(save_url)
+        # skimage.io.imsave(save_url, masked_image.astype('uint8'))
+   
 def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10):
     """
     anchors: [n, (y1, x1, y2, x2)] list of anchors in image coordinates.
