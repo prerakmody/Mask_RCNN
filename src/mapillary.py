@@ -1,5 +1,6 @@
 import os
 import cv2
+import math
 import json
 import pprint
 import colorsys
@@ -15,7 +16,8 @@ import src.utils as utils
 
 class MapillaryConfig(Config):
     NAME = "mapillary"
-
+    
+    GPU_IMPL_TYPE = 'self'
     GPU_COUNT = 1
     IMAGES_PER_GPU = 8
     
@@ -33,10 +35,27 @@ class MapillaryConfig(Config):
     TRAIN_ROIS_PER_IMAGE = 30
     ROI_POSITIVE_RATIO = 0.9
     
-    STEPS_PER_EPOCH = 2
-    # STEPS_PER_EPOCH = 2250
+    STEPS_PER_EPOCH = 2250
     VALIDATION_STEPS = 2
+    
+    def __init__(self, images_per_gpu=-1, gpu_count=-1):
+        """Set values of computed attributes."""
+        # Effective batch size
+        if (images_per_gpu > 0) & (gpu_count > 0):
+            self.IMAGES_PER_GPU = images_per_gpu
+            self.GPU_COUNT      = gpu_count
+        self.BATCH_SIZE = self.IMAGES_PER_GPU * self.GPU_COUNT
 
+        # Input image size
+        self.IMAGE_SHAPE = np.array(
+            [self.IMAGE_MAX_DIM, self.IMAGE_MAX_DIM, 3])
+
+        # Compute backbone size from input image size
+        self.BACKBONE_SHAPES = np.array(
+            [[int(math.ceil(self.IMAGE_SHAPE[0] / stride)),
+              int(math.ceil(self.IMAGE_SHAPE[1] / stride))]
+             for stride in self.BACKBONE_STRIDES])
+    
 
 class MapillaryDataset(utils.Dataset):
     
